@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flip Radar — фильтры</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #fff));
+    --text: var(--tg-theme-text-color, #111);
+    --hint: var(--tg-theme-hint-color, #8e8e93);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #fff);
+    --header: var(--tg-theme-section-header-text-color, var(--hint));
+    --sep: color-mix(in srgb, var(--hint) 25%, transparent);
+    --danger: var(--tg-theme-destructive-text-color, #e53935);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", sans-serif;
+    padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  h2 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: .03em;
+       color: var(--header); margin: 20px 16px 6px; }
+  .card { background: var(--card); border-radius: 12px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 48px; }
+  .row + .row { border-top: 1px solid var(--sep); }
+  .row .grow { flex: 1; min-width: 0; }
+  .sub { color: var(--hint); font-size: 13px; }
+  .note { color: var(--hint); font-size: 13px; margin: 6px 16px 0; }
+  .warn { color: var(--danger); }
+  .big { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* переключатель */
+  .switch { position: relative; width: 51px; height: 31px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; border-radius: 31px; background: var(--sep); transition: .2s; }
+  .switch span::after { content: ""; position: absolute; width: 27px; height: 27px; left: 2px; top: 2px;
+    border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); transition: .2s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(20px); }
+  .switch input:disabled + span { opacity: .4; }
+
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+  .chip { border: 1px solid var(--sep); background: transparent; color: var(--text); border-radius: 18px;
+    padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .num { width: 110px; text-align: right; font: inherit; font-size: 20px; font-weight: 600;
+    background: transparent; color: var(--text); border: 0; outline: 0; font-variant-numeric: tabular-nums; }
+  .num:disabled { color: var(--hint); }
+  .search { width: 100%; font: inherit; border: 0; outline: 0; background: var(--bg); color: var(--text);
+    padding: 9px 12px; border-radius: 10px; }
+  .list { max-height: 46vh; overflow-y: auto; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; }
+  .item + .item { border-top: 1px solid var(--sep); }
+  .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--sep); flex: none;
+    display: grid; place-items: center; color: var(--accent-text); font-size: 13px; }
+  .item.on .check { background: var(--accent); border-color: var(--accent); }
+  .item.on .check::after { content: "✓"; }
+  .disabled { opacity: .45; pointer-events: none; }
+  .empty { padding: 16px; color: var(--hint); text-align: center; font-size: 14px; }
+  #fallbackSave { display: none; width: 100%; margin-top: 20px; padding: 14px; border: 0; border-radius: 12px;
+    background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; }
+  #error { display: none; padding: 40px 20px; text-align: center; color: var(--hint); }
+</style>
+</head>
+<body>
+<div id="error"></div>
+<main id="app" hidden>
+  <div class="card">
+    <div class="row">
+      <div class="grow"><b>Радар</b><div class="sub" id="activeHint"></div></div>
+      <label class="switch"><input type="checkbox" id="active"><span></span></label>
+    </div>
+  </div>
+
+  <h2>Скидка к рынку</h2>
+  <div class="card">
+    <div class="row">
+      <div class="grow">от <span class="big" id="discountVal"></span><span class="big">%</span></div>
+    </div>
+    <div class="row" style="padding-top:0"><input type="range" id="discount" min="1" max="90" step="1"></div>
+    <div class="chips" id="discountChips"></div>
+  </div>
+  <p class="note">Рынок — самый дешёвый другой лот той же модели на том же маркете.</p>
+
+  <h2>Бюджет</h2>
+  <div class="card">
+    <div class="row">
+      <div class="grow">Без лимита</div>
+      <label class="switch"><input type="checkbox" id="unlimited"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="grow">Не дороже</div>
+      <input class="num" id="budget" type="number" inputmode="decimal" min="0.1" step="any" placeholder="—">
+      <span class="sub">TON</span>
+    </div>
+    <div class="chips" id="budgetChips"></div>
+  </div>
+
+  <h2>Маркеты</h2>
+  <div class="card" id="markets"></div>
+
+  <h2>Коллекции</h2>
+  <div class="card">
+    <div class="row">
+      <div class="grow">Все коллекции<div class="sub" id="allHint"></div></div>
+      <label class="switch"><input type="checkbox" id="watchAll"><span></span></label>
+    </div>
+    <div id="collBlock">
+      <div class="row"><input class="search" id="search" type="search" placeholder="Поиск коллекции"></div>
+      <div class="list" id="collList"></div>
+    </div>
+  </div>
+  <p class="note" id="collNote"></p>
+
+  <button id="fallbackSave">Сохранить</button>
+</main>
+
+<script>
+(async function () {
+  const tg = window.Telegram && Telegram.WebApp;
+  const $ = (id) => document.getElementById(id);
+  const DISCOUNTS = [10, 15, 20, 25, 30, 40];
+  const BUDGETS = [5, 10, 25, 50, 100, 250, 500, 1000];
+  const MARKETS = [["portals", "Portals"], ["mrkt", "MRKT"], ["tonnel", "Tonnel"],
+                   ["getgems", "GetGems"], ["telegram", "Telegram Market"]];
+
+  function fail(msg) {
+    $("error").textContent = msg;
+    $("error").style.display = "block";
+  }
+
+  // Настройки приходят от бота в параметре ?s= : base64url(deflate-raw(JSON)) с префиксом "z"
+  // или base64url(JSON) без префикса.
+  async function decodeState(raw) {
+    const z = raw.startsWith("z");
+    const b64 = (z ? raw.slice(1) : raw).replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64 + "===".slice((b64.length + 3) % 4)), (c) => c.charCodeAt(0));
+    let text;
+    if (z) {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      text = await new Response(stream).text();
+    } else {
+      text = new TextDecoder().decode(bytes);
+    }
+    return JSON.parse(text);
+  }
+
+  const raw = new URLSearchParams(location.search).get("s");
+  if (!raw) return fail("Откройте эту страницу кнопкой «⚙️ Фильтры» в чате бота.");
+  let s;
+  try { s = await decodeState(raw); } catch (e) { return fail("Не удалось прочитать настройки. Нажмите /filters в боте и откройте снова."); }
+
+  if (tg) { tg.ready(); tg.expand(); }
+
+  // ----- состояние -----
+  const state = {
+    active: !!s.a,
+    discount: Number(s.d) || 15,
+    budget: s.b == null ? null : Number(s.b),
+    lastBudget: s.b == null ? 50 : Number(s.b),
+    markets: new Set(s.m || []),
+    available: new Set(s.am || []),
+    watchAll: !!s.w,
+    watch: new Set(s.wl || []),
+    all: Array.from(new Set([...(s.c || []), ...(s.wl || [])])).sort((a, b) => a.localeCompare(b)),
+  };
+  const initial = JSON.stringify(payload());
+
+  function payload() {
+    return { v: 1, a: state.active, d: state.discount, b: state.budget,
+             m: [...state.markets].sort(), w: state.watchAll, c: [...state.watch].sort() };
+  }
+  function haptic() { tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); }
+
+  // ----- радар -----
+  $("active").checked = state.active;
+  const renderActive = () => { $("activeHint").textContent = state.active ? "Включён — присылаю находки" : "На паузе"; };
+  $("active").onchange = (e) => { state.active = e.target.checked; haptic(); renderActive(); update(); };
+
+  // ----- скидка -----
+  function renderDiscount() {
+    $("discount").value = state.discount;
+    $("discountVal").textContent = state.discount;
+    $("discountChips").querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", +c.dataset.v === state.discount));
+  }
+  DISCOUNTS.forEach((v) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.dataset.v = v; b.textContent = v + "%";
+    b.onclick = () => { state.discount = v; haptic(); renderDiscount(); update(); };
+    $("discountChips").appendChild(b);
+  });
+  $("discount").oninput = (e) => { state.discount = +e.target.value; renderDiscount(); update(); };
+
+  // ----- бюджет -----
+  function renderBudget() {
+    const unlimited = state.budget == null;
+    $("unlimited").checked = unlimited;
+    $("budget").disabled = unlimited;
+    if (document.activeElement !== $("budget")) $("budget").value = unlimited ? "" : state.budget;
+    $("budgetChips").querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", !unlimited && +c.dataset.v === state.budget));
+  }
+  BUDGETS.forEach((v) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.dataset.v = v; b.textContent = v;
+    b.onclick = () => { state.budget = v; state.lastBudget = v; haptic(); renderBudget(); update(); };
+    $("budgetChips").appendChild(b);
+  });
+  $("unlimited").onchange = (e) => { state.budget = e.target.checked ? null : state.lastBudget; haptic(); renderBudget(); update(); };
+  $("budget").oninput = (e) => {
+    const v = parseFloat(String(e.target.value).replace(",", "."));
+    if (v > 0) { state.budget = v; state.lastBudget = v; }
+    renderBudget(); update();
+  };
+
+  // ----- маркеты -----
+  MARKETS.forEach(([key, title]) => {
+    const ok = state.available.has(key);
+    const row = document.createElement("label");
+    row.className = "row";
+    row.innerHTML = `<div class="grow"></div><span class="switch"><input type="checkbox"><span></span></span>`;
+    row.querySelector(".grow").innerHTML = ok ? "" : `<div class="sub">не подключён на сервере</div>`;
+    row.querySelector(".grow").prepend(document.createTextNode(title));
+    const input = row.querySelector("input");
+    input.checked = ok && state.markets.has(key);
+    input.disabled = !ok;
+    input.onchange = () => { input.checked ? state.markets.add(key) : state.markets.delete(key); haptic(); update(); };
+    $("markets").appendChild(row);
+  });
+
+  // ----- коллекции -----
+  function renderCollections() {
+    $("watchAll").checked = state.watchAll;
+    $("collBlock").classList.toggle("disabled", state.watchAll);
+    $("allHint").textContent = state.all.length ? `${state.all.length} в базе` : "";
+    const q = $("search").value.trim().toLowerCase();
+    const list = $("collList");
+    list.innerHTML = "";
+    // выбранные — сверху
+    const items = state.all
+      .filter((t) => !q || t.toLowerCase().includes(q))
+      .sort((a, b) => (state.watch.has(b) - state.watch.has(a)) || a.localeCompare(b));
+    if (!state.all.length) {
+      list.innerHTML = `<div class="empty">Список коллекций ещё загружается с маркетов — откройте фильтры через минуту.</div>`;
+    } else if (!items.length) {
+      list.innerHTML = `<div class="empty">Ничего не найдено</div>`;
+    }
+    for (const title of items) {
+      const el = document.createElement("div");
+      el.className = "item" + (state.watch.has(title) ? " on" : "");
+      el.innerHTML = `<span class="check"></span><span class="grow"></span>`;
+      el.querySelector(".grow").textContent = title;
+      el.onclick = () => {
+        state.watch.has(title) ? state.watch.delete(title) : state.watch.add(title);
+        el.classList.toggle("on");
+        haptic(); renderNote(); update();
+      };
+      list.appendChild(el);
+    }
+    renderNote();
+  }
+  function renderNote() {
+    const n = state.watch.size;
+    const note = $("collNote");
+    note.classList.toggle("warn", !state.watchAll && !n);
+    if (state.watchAll) note.textContent = "Слежу за всеми коллекциями. Выключите, чтобы выбрать конкретные.";
+    else if (!n) note.textContent = "Ничего не выбрано — уведомления не придут.";
+    else note.textContent = `Выбрано: ${n}`;
+  }
+  $("watchAll").onchange = (e) => { state.watchAll = e.target.checked; haptic(); renderCollections(); update(); };
+  $("search").oninput = renderCollections;
+
+  // ----- сохранение -----
+  function valid() {
+    if (state.budget != null && !(state.budget > 0)) return false;
+    return true;
+  }
+  function save() {
+    if (!valid()) { tg ? tg.showAlert("Бюджет должен быть больше нуля") : alert("Бюджет должен быть больше нуля"); return; }
+    const data = JSON.stringify(payload());
+    if (tg && tg.sendData && tg.initData !== undefined) {
+      try { tg.sendData(data); return; } catch (e) { /* открыто не с кнопки клавиатуры */ }
+    }
+    fail("Сохранить можно только если открыть страницу кнопкой «⚙️ Фильтры» под полем ввода в чате бота.");
+  }
+  function update() {
+    const changed = JSON.stringify(payload()) !== initial;
+    if (tg && tg.MainButton) {
+      tg.MainButton.setText(changed ? "Сохранить" : "Без изменений");
+      changed ? tg.MainButton.enable() : tg.MainButton.disable();
+      tg.MainButton.show();
+    } else {
+      $("fallbackSave").style.display = "block";
+    }
+  }
+  if (tg && tg.MainButton) tg.MainButton.onClick(save);
+  $("fallbackSave").onclick = save;
+
+  renderActive(); renderDiscount(); renderBudget(); renderCollections(); update();
+  $("app").hidden = false;
+})();
+</script>
+</body>
+</html>
